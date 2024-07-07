@@ -24,13 +24,35 @@ OBJCOPY    = objcopy
 PACK_HEX   = packihx
 WCHISP    ?= python3 tools/chprog.py
 
+OBJDIR := obj
+BINDIR := bin
+
 # Compiler Flags
 CFLAGS  = -mmcs51 --model-small --no-xinit-opt
 CFLAGS += --xram-size $(XRAM_SIZE) --xram-loc $(XRAM_LOC) --code-size $(CODE_SIZE)
 CFLAGS += -I$(INCLUDE) -DFREQ_SYS=$(FREQ_SYS)
 CFILES  = $(SKETCH) $(wildcard $(INCLUDE)/*.c)
-RFILES  = $(CFILES:.c=.rel)
+RFILES  = $(addprefix $(OBJDIR)/,$(notdir $(CFILES:.c=.rel)))
 CLEAN   = rm -f *.ihx *.lk *.map *.mem *.lst *.rel *.rst *.sym *.asm *.adb
+
+
+vpath %.h ./include
+vpath %.c ./include
+vpath %.o ./$(OBJDIR)
+vpath ./$(BINDIR)
+vpath %.rel ./$(OBJDIR)
+vpath %.lst ./$(OBJDIR)
+
+
+# The following will include all of the auto-generated dependency files (*.d)
+# if they exist. This will trigger a rebuild of a source file if a header changes
+ALL_DEPS := $(patsubst %.rel,%.d,$(RFILES))
+-include $(ALL_DEPS)
+
+$(OBJDIR) $(BINDIR):
+	@echo "Creating directory $@"
+	mkdir -p $@
+
 
 # Symbolic Targets
 help:
@@ -41,13 +63,13 @@ help:
 	@echo "make flash   compile, build and upload $(TARGET).bin to device"
 	@echo "make clean   remove all build files"
 
-%.rel : %.c
-	@echo "Compiling $< ..."
-	@$(CC) -c $(CFLAGS) $<
+$(OBJDIR)/%.rel : %.c | $(OBJDIR)
+	@echo "Compiling $(notdir $<)"
+	@$(CC) -c $(CFLAGS) -Wp,-MMD,-MT$@,-MF$(OBJDIR)/$(notdir $(<:.c=.d)) $< -o $@
 
 $(TARGET).ihx: $(RFILES)
 	@echo "Building $(TARGET).ihx ..."
-	@$(CC) $(notdir $(RFILES)) $(CFLAGS) -o $(TARGET).ihx
+	@$(CC) $(RFILES) $(CFLAGS) -o $(TARGET).ihx
 
 $(TARGET).hex: $(TARGET).ihx
 	@echo "Building $(TARGET).hex ..."
@@ -81,8 +103,10 @@ size:
 removetemp:
 	@echo "Removing temporary files ..."
 	@$(CLEAN)
+	rm -rf $(OBJDIR)
 
 clean:
 	@echo "Cleaning all up ..."
 	@$(CLEAN)
 	@rm -f $(TARGET).hex $(TARGET).bin
+	rm -rf $(OBJDIR)
